@@ -3,19 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Capital — Where All the Money Is</title>
+  <title>Global Capital — Every Dollar on Earth, Mapped</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/globe.gl"></script>
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body class="bg-[#0d1117] text-white overflow-hidden h-screen flex flex-col">
 
-  <header class="flex items-center justify-between px-6 py-3 border-b border-white/10 z-10 bg-[#0d1117]/90 backdrop-blur">
-    <div>
-      <h1 class="text-xl font-bold tracking-tight">Capital</h1>
+  <header class="flex items-center justify-center px-6 py-3 border-b border-white/10 z-10 bg-[#0d1117]/90 backdrop-blur relative">
+    <div class="text-center">
+      <h1 class="text-xl font-bold tracking-tight">Global Capital</h1>
       <p class="text-xs text-white/40">Every dollar on Earth, mapped.</p>
     </div>
-    <div id="status" class="text-xs text-white/30"></div>
+    <div id="status" class="text-xs text-white/30 absolute right-6"></div>
   </header>
 
   <div class="flex flex-1 overflow-hidden">
@@ -39,7 +39,7 @@
     </div>
 
   <!-- Panel: fixed overlay on the right -->
-  <div id="panel" class="fixed top-0 right-0 bottom-0 w-96 bg-[#0d1117] border-l border-white/10 overflow-y-auto z-50" style="display:none">
+  <div id="panel" class="fixed top-0 right-0 w-96 bg-[#0d1117] border-l border-white/10 overflow-y-auto z-50" style="display:none;bottom:0">
     <div class="p-5">
       <div class="flex items-center justify-between mb-4">
         <h2 id="panel-title" class="text-lg font-semibold"></h2>
@@ -50,12 +50,12 @@
     </div>
   </div>
 
-  <div id="scale-bar" class="px-6 py-3 border-t border-white/10 z-10 bg-[#0d1117]/90 backdrop-blur">
+  <div id="scale-bar" style="position:fixed;bottom:0;left:0;right:0;z-index:60;background:#0d1117;border-top:1px solid rgba(255,255,255,0.1);padding:12px 24px;transition:right 0.4s ease">
     <div class="flex items-center gap-2 mb-1.5">
-      <span class="text-xs text-white/40 uppercase tracking-wider">All Capital</span>
+      <span id="scale-title" class="text-xs text-white/40 uppercase tracking-wider">All Capital</span>
       <span id="scale-total" class="text-xs text-white/60 font-mono"></span>
     </div>
-    <div id="scale-segments" class="flex h-6 rounded overflow-hidden"></div>
+    <div id="scale-segments" style="display:flex;height:24px;border-radius:8px;overflow:hidden"></div>
     <div id="scale-labels" class="flex mt-1"></div>
   </div>
 
@@ -245,6 +245,8 @@
       if (!c) return;
       lastPanelCode = code;
       document.getElementById('panel').style.display = 'block';
+      document.getElementById('scale-bar').style.right = '384px';
+      renderCountryScaleBar(code);
 
       const layer = currentLayer;
       const layerInfo = LAYERS.find(l => l.key === layer);
@@ -505,20 +507,59 @@
     document.getElementById('panel-close').addEventListener('click', (e) => {
       e.stopPropagation();
       document.getElementById('panel').style.display = 'none';
+      document.getElementById('scale-bar').style.right = '0';
+      resetScaleBar();
     });
 
     // Scale bar
+    let globalScaleData = null;
+
+    const LABEL_MAP_SCALE = {
+      real_estate:'Real Estate', stocks:'Stocks', bonds:'Bonds',
+      pensions:'Pensions', pe_hf:'PE/HF', sovereign_wealth:'Sov. Wealth',
+      billionaires:'Billionaires', central_bank:'Central Bank',
+      crypto:'Crypto', bigtech:'Big Tech', vc:'VC', insurance:'Insurance'
+    };
+
     function renderScaleBar(s) {
-      const total = s.asset_classes.reduce((a,c)=>a+c.total_usd,0);
-      document.getElementById('scale-total').textContent = '$'+formatNum(total);
-      document.getElementById('scale-segments').innerHTML = s.asset_classes.map(c => {
-        const pct = (c.total_usd/total)*100;
-        return pct < 0.5 ? '' : `<div class="scale-segment" style="width:${pct}%;background:${c.color}" title="${c.name}: $${formatNum(c.total_usd)}"></div>`;
+      globalScaleData = s;
+      renderScaleBarData(s.asset_classes, 'All Capital');
+    }
+
+    function renderScaleBarData(classes, title) {
+      const total = classes.reduce((a,c) => a + (c.total_usd || c.value || 0), 0);
+      document.getElementById('scale-title').textContent = title;
+      document.getElementById('scale-total').textContent = '$' + formatNum(total);
+      const visible = classes.filter(c => ((c.total_usd || c.value || 0) / total) * 100 >= 0.5);
+      document.getElementById('scale-segments').innerHTML = visible.map((c, i) => {
+        const val = c.total_usd || c.value || 0;
+        const pct = (val / total) * 100;
+        const isLast = i === visible.length - 1;
+        return `<div class="scale-segment" style="${isLast ? 'flex:1' : 'width:'+pct+'%'};background:${c.color};transition:width 0.4s ease" title="${c.name}: $${formatNum(val)} (${pct.toFixed(1)}%)"></div>`;
       }).join('');
-      document.getElementById('scale-labels').innerHTML = s.asset_classes.map(c => {
-        const pct = (c.total_usd/total)*100;
+      document.getElementById('scale-labels').innerHTML = classes.map(c => {
+        const val = c.total_usd || c.value || 0;
+        const pct = (val / total) * 100;
         return pct < 3 ? `<div style="width:${pct}%"></div>` : `<div style="width:${pct}%" class="text-[9px] text-white/40 truncate px-0.5">${c.name}</div>`;
       }).join('');
+    }
+
+    function renderCountryScaleBar(countryCode) {
+      const c = countryLookup[countryCode];
+      if (!c) return;
+      const classes = Object.entries(c.breakdown)
+        .filter(([,v]) => v > 0)
+        .sort((a,b) => b[1] - a[1])
+        .map(([k,v]) => ({
+          name: LABEL_MAP_SCALE[k] || k,
+          value: v,
+          color: ASSET_COLORS[k] || '#666'
+        }));
+      renderScaleBarData(classes, c.country_name);
+    }
+
+    function resetScaleBar() {
+      if (globalScaleData) renderScaleBar(globalScaleData);
     }
 
     // Init
