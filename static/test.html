@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://unpkg.com/globe.gl"></script>
+</head>
+<body style="margin:0;background:#1a1a2e">
+  <div id="globe"></div>
+  <button onclick="changeColor()" style="position:fixed;top:10px;left:10px;z-index:10;padding:10px;font-size:16px">
+    Click to change colors
+  </button>
+  <script>
+    let colorMode = 0;
+    const colors = ['#ff6644', '#44ff66', '#4466ff'];
+
+    fetch('/data/countries.geojson').then(r => r.json()).then(geo => {
+      window.geoFeatures = geo.features.filter(d => d.geometry);
+      console.log('Loaded', window.geoFeatures.length, 'features');
+
+      window.myGlobe = Globe()(document.getElementById('globe'))
+        .backgroundColor('#1a1a2e')
+        .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
+        .showAtmosphere(true)
+        .polygonsData(window.geoFeatures.map(f => ({...f, _color: '#ff6644'})))
+        .polygonGeoJsonGeometry(d => d.geometry)
+        .polygonCapColor(d => d._color)
+        .polygonSideColor(() => 'rgba(0,0,0,0.3)')
+        .polygonAltitude(0.01)
+        .polygonsTransitionDuration(300)
+        .width(window.innerWidth)
+        .height(window.innerHeight);
+    });
+
+    function changeColor() {
+      colorMode = (colorMode + 1) % 3;
+      const c = colors[colorMode];
+      console.log('Changing to', c);
+      window.myGlobe.polygonsData(
+        window.geoFeatures.map(f => ({...f, _color: c}))
+      );
+    }
+  </script>
+</body>
+</html>

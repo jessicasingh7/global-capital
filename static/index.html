@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capital — Where All the Money Is</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/globe.gl"></script>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="bg-[#0d1117] text-white overflow-hidden h-screen flex flex-col">
+
+  <header class="flex items-center justify-between px-6 py-3 border-b border-white/10 z-10 bg-[#0d1117]/90 backdrop-blur">
+    <div>
+      <h1 class="text-xl font-bold tracking-tight">Capital</h1>
+      <p class="text-xs text-white/40">Every dollar on Earth, mapped.</p>
+    </div>
+    <div id="status" class="text-xs text-white/30"></div>
+  </header>
+
+  <div class="flex flex-1 overflow-hidden">
+    <div class="flex-1 relative">
+      <div id="globe" style="width:100%;height:100%"></div>
+
+      <div id="layer-toggles" class="absolute top-4 left-4 flex flex-col gap-1.5 z-10"></div>
+
+      <div id="color-legend" class="absolute bottom-4 left-4 z-10 bg-white/5 backdrop-blur-md rounded-lg px-3 py-2 border border-white/10">
+        <div class="text-[9px] text-white/40 uppercase tracking-wider mb-1.5">Capital Concentration</div>
+        <div class="flex items-center gap-1">
+          <div class="gradient-bar w-28 h-3 rounded-sm" style="background:linear-gradient(to right, rgba(2,83,133,0.3), rgba(4,226,183,0.6), rgba(14,243,197,0.95))"></div>
+        </div>
+        <div class="flex justify-between mt-0.5">
+          <span class="text-[8px] text-white/30">Low</span>
+          <span class="text-[8px] text-white/30">High</span>
+        </div>
+      </div>
+    </div>
+
+    </div>
+
+  <!-- Panel: fixed overlay on the right -->
+  <div id="panel" class="fixed top-0 right-0 bottom-0 w-96 bg-[#0d1117] border-l border-white/10 overflow-y-auto z-50" style="display:none">
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 id="panel-title" class="text-lg font-semibold"></h2>
+        <button id="panel-close" class="text-white/40 hover:text-white text-2xl leading-none cursor-pointer px-2">&times;</button>
+      </div>
+      <div id="panel-total" class="text-2xl font-bold mb-4"></div>
+      <div id="panel-breakdown" class="space-y-2"></div>
+    </div>
+  </div>
+
+  <div id="scale-bar" class="px-6 py-3 border-t border-white/10 z-10 bg-[#0d1117]/90 backdrop-blur">
+    <div class="flex items-center gap-2 mb-1.5">
+      <span class="text-xs text-white/40 uppercase tracking-wider">All Capital</span>
+      <span id="scale-total" class="text-xs text-white/60 font-mono"></span>
+    </div>
+    <div id="scale-segments" class="flex h-6 rounded overflow-hidden"></div>
+    <div id="scale-labels" class="flex mt-1"></div>
+  </div>
+
+  <script>
+    const ASSET_COLORS = {
+      real_estate: '#0EF3C5', stocks: '#38bdf8', bonds: '#025385',
+      pensions: '#fb923c', pe_hf: '#f43f5e', sovereign_wealth: '#04E2B7',
+      billionaires: '#fbbf24', central_bank: '#038298', bigtech: '#38bdf8',
+      vc: '#34d399', crypto: '#e879f9', insurance: '#94a3b8',
+    };
+
+    const LAYERS = [
+      { key: 'all', label: 'All Capital', color: '#0EF3C5' },
+      { key: 'real_estate', label: 'Real Estate', color: '#0EF3C5' },
+      { key: 'stocks', label: 'Stock Markets', color: '#38bdf8' },
+      { key: 'bonds', label: 'Bonds & Debt', color: '#025385' },
+      { key: 'pensions', label: 'Pensions', color: '#fb923c' },
+      { key: 'pe_hf', label: 'PE & Hedge Funds', color: '#f43f5e' },
+      { key: 'sovereign_wealth', label: 'Sovereign Wealth', color: '#04E2B7' },
+      { key: 'billionaires', label: 'Billionaires', color: '#fbbf24' },
+      { key: 'central_bank', label: 'Central Banks', color: '#038298' },
+      { key: 'crypto', label: 'Crypto', color: '#e879f9' },
+    ];
+
+    let myGlobe, geoFeatures, capitalData, countryLookup = {}, currentLayer = 'all', lastPanelCode = null;
+
+    function formatNum(n) {
+      if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T';
+      if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+      return n.toLocaleString();
+    }
+
+    function renderLayer(layerKey) {
+      currentLayer = layerKey;
+      let maxVal = 0;
+      capitalData.forEach(c => {
+        const v = layerKey === 'all' ? c.total_capital_usd : (c.breakdown[layerKey] || 0);
+        if (v > maxVal) maxVal = v;
+      });
+
+      const polys = geoFeatures.map(f => {
+        const code = f.properties.ISO_A3;
+        const name = f.properties.NAME || code;
+        const ctry = countryLookup[code];
+        const val = ctry ? (layerKey === 'all' ? ctry.total_capital_usd : (ctry.breakdown[layerKey] || 0)) : 0;
+        const t = maxVal > 0 && val > 0 ? Math.pow(val / maxVal, 0.35) : 0;
+
+        let color = '#161b22';
+        if (val > 0) {
+          if (layerKey === 'all') {
+            // Deep teal → bright cyan (aurora)
+            const r = Math.round(2 + t * 12);      // 2 → 14
+            const g = Math.round(83 + t * 160);     // 83 → 243
+            const b = Math.round(133 + t * 64);     // 133 → 197
+            color = `rgb(${r},${g},${b})`;
+          } else {
+            const base = ASSET_COLORS[layerKey] || '#8b5cf6';
+            const br=parseInt(base.slice(1,3),16), bg=parseInt(base.slice(3,5),16), bb=parseInt(base.slice(5,7),16);
+            color = `rgb(${Math.round(40+(br-40)*t)},${Math.round(40+(bg-40)*t)},${Math.round(60+(bb-60)*t)})`;
+          }
+        }
+
+        // Rich tooltip
+        let label = '';
+        if (!ctry) {
+          label = `<div style="background:rgba(15,15,30,0.95);padding:10px 14px;border-radius:8px;font-size:12px;color:white;border:1px solid rgba(255,255,255,0.1)">
+            <b>${name}</b><br><span style="color:rgba(255,255,255,0.4)">No data</span></div>`;
+        } else {
+          const worldTotal = capitalData.reduce((s,x) => s + (layerKey==='all' ? x.total_capital_usd : (x.breakdown[layerKey]||0)), 0);
+          const pctWorld = worldTotal > 0 ? ((val / worldTotal) * 100).toFixed(1) : '0';
+          const pop = ctry.population || 0;
+          const perCap = pop > 0 ? Math.round(val / pop) : 0;
+          const topBill = (ctry.top_billionaires || []).slice(0, 2);
+          const vcInfo = ctry.vc_stats;
+          const numBill = ctry.num_billionaires || 0;
+
+          // Build context section based on active layer
+          const layerLabel = LAYERS.find(l => l.key === layerKey)?.label || 'All Capital';
+          let contextHtml = '';
+
+          if (layerKey === 'all') {
+            // All Capital: show billionaires + VC
+            if (topBill.length) {
+              contextHtml += `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px;margin-bottom:4px">
+                <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">${numBill} Billionaires</div>
+                ${topBill.map(b => `<div style="display:flex;justify-content:space-between;margin-top:2px;gap:12px">
+                  <span>${b.name}</span><span style="color:#f59e0b;font-family:monospace;white-space:nowrap">$${formatNum(b.worth)}</span>
+                </div>`).join('')}
+              </div>`;
+            }
+            if (vcInfo) {
+              contextHtml += `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+                <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">VC Activity</div>
+                <div>$${formatNum(vcInfo.total_annual_usd)}/yr · ${vcInfo.num_deals.toLocaleString()} deals</div>
+              </div>`;
+            }
+          } else if (layerKey === 'stocks' && ctry.top_companies) {
+            const cos = ctry.top_companies.slice(0, 3);
+            contextHtml = `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+              <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Largest Companies</div>
+              ${cos.map(co => `<div style="display:flex;justify-content:space-between;margin-top:2px;gap:12px">
+                <span>${co.name}</span><span style="color:#8b5cf6;font-family:monospace;white-space:nowrap">$${formatNum(co.market_cap)}</span>
+              </div>`).join('')}
+            </div>`;
+          } else if (layerKey === 'billionaires' && topBill.length) {
+            contextHtml = `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+              <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">${numBill} Billionaires</div>
+              ${topBill.map(b => `<div style="display:flex;justify-content:space-between;margin-top:2px;gap:12px">
+                <span>${b.name}</span><span style="color:#f59e0b;font-family:monospace;white-space:nowrap">$${formatNum(b.worth)}</span>
+              </div>`).join('')}
+            </div>`;
+          } else if ((layerKey === 'pe_hf' || layerKey === 'vc') && vcInfo) {
+            contextHtml = `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+              <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">VC & PE Activity</div>
+              <div>$${formatNum(vcInfo.total_annual_usd)}/yr · ${vcInfo.num_deals.toLocaleString()} deals</div>
+              <div style="color:rgba(255,255,255,0.4);font-size:10px">${vcInfo.top_sectors.slice(0, 3).join(', ')}</div>
+              ${vcInfo.notable_rounds?.length ? vcInfo.notable_rounds.slice(0,2).map(r => `<div style="display:flex;justify-content:space-between;margin-top:2px;gap:8px">
+                <span>${r.company} <span style="color:rgba(255,255,255,0.3)">${r.sector}</span></span>
+                <span style="color:#10b981;font-family:monospace;white-space:nowrap">$${formatNum(r.amount)}</span>
+              </div>`).join('') : ''}
+            </div>`;
+          } else if (layerKey === 'real_estate') {
+            const gdpRatio = ctry.gdp_usd ? (val / ctry.gdp_usd).toFixed(1) : '?';
+            contextHtml = `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+              <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Real Estate</div>
+              <div>${gdpRatio}x the country's GDP</div>
+              ${perCap > 0 ? `<div style="color:rgba(255,255,255,0.4)">$${formatNum(perCap)} of property per person</div>` : ''}
+            </div>`;
+          } else if (layerKey === 'sovereign_wealth') {
+            contextHtml = val > 0 ? `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+              <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Sovereign Wealth</div>
+              <div>${ctry.gdp_usd ? (val / ctry.gdp_usd * 100).toFixed(0) + '% of GDP' : ''}</div>
+              ${pop > 0 ? `<div style="color:rgba(255,255,255,0.4)">$${formatNum(Math.round(val / pop))} per citizen</div>` : ''}
+            </div>` : '';
+          } else if (layerKey === 'bonds') {
+            contextHtml = `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+              <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Debt & Bonds</div>
+              <div>${ctry.gdp_usd ? (val / ctry.gdp_usd * 100).toFixed(0) + '% of GDP in debt' : ''}</div>
+              ${pop > 0 ? `<div style="color:rgba(255,255,255,0.4)">$${formatNum(Math.round(val / pop))} per person</div>` : ''}
+            </div>`;
+          } else if (layerKey === 'pensions') {
+            contextHtml = `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+              <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Pension Funds</div>
+              ${pop > 0 ? `<div>$${formatNum(Math.round(val / pop))} saved per person</div>` : ''}
+              ${ctry.gdp_usd ? `<div style="color:rgba(255,255,255,0.4)">${(val / ctry.gdp_usd * 100).toFixed(0)}% of GDP</div>` : ''}
+            </div>`;
+          } else if (layerKey === 'central_bank') {
+            contextHtml = `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+              <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Central Bank Reserves</div>
+              ${ctry.gdp_usd ? `<div>${(val / ctry.gdp_usd * 100).toFixed(0)}% of GDP in reserves</div>` : ''}
+            </div>`;
+          } else if (layerKey === 'crypto') {
+            const cs = ctry.crypto_stats;
+            contextHtml = `<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:6px">
+              <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">Crypto</div>
+              <div>${ctry.total_capital_usd ? ((val / ctry.total_capital_usd) * 100).toFixed(2) + '% of total capital' : ''}</div>
+              ${cs ? `${cs.holders_m >= 1 ? `<div>${cs.holders_m}M holders</div>` : ''}
+              ${cs.exchanges.length ? `<div style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:3px">${cs.exchanges.slice(0,3).join(', ')}</div>` : ''}
+              <div style="color:rgba(255,255,255,0.3);font-size:10px;margin-top:2px">${cs.regulation}</div>` : ''}
+            </div>`;
+          }
+
+          label = `<div style="background:rgba(15,15,30,0.95);padding:12px 16px;border-radius:8px;font-size:12px;color:white;border:1px solid rgba(255,255,255,0.12);min-width:220px;max-width:280px;line-height:1.5;pointer-events:none">
+            <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name}</div>
+            <div style="color:#0EF3C5;font-family:monospace;font-size:18px;font-weight:700">$${formatNum(val)}</div>
+            <div style="color:rgba(255,255,255,0.4);font-size:11px">${pctWorld}% of world ${layerKey === 'all' ? 'capital' : layerLabel.toLowerCase()}</div>
+            ${perCap > 0 && layerKey === 'all' ? `<div style="color:rgba(255,255,255,0.4);font-size:11px;margin-bottom:6px">$${formatNum(perCap)} per person</div>` : '<div style="margin-bottom:6px"></div>'}
+            ${contextHtml}
+          </div>`;
+        }
+
+        return {
+          ...f,
+          _color: color,
+          _alt: 0.006,
+          _label: label,
+          _code: code,
+        };
+      });
+
+      myGlobe.polygonsData(polys);
+    }
+
+    function showPanel(code) {
+      const c = countryLookup[code];
+      if (!c) return;
+      lastPanelCode = code;
+      document.getElementById('panel').style.display = 'block';
+
+      const layer = currentLayer;
+      const layerInfo = LAYERS.find(l => l.key === layer);
+      const layerLabel = layerInfo?.label || 'All Capital';
+      const val = layer === 'all' ? c.total_capital_usd : (c.breakdown[layer] || 0);
+      const worldTotal = capitalData.reduce((s,x) => s + (layer==='all' ? x.total_capital_usd : (x.breakdown[layer]||0)), 0);
+      const pctWorld = worldTotal > 0 ? ((val / worldTotal) * 100).toFixed(1) : '0';
+      const pop = c.population || 0;
+      const perCap = pop > 0 ? Math.round(val / pop) : 0;
+
+      document.getElementById('panel-title').textContent = c.country_name;
+      const tot = document.getElementById('panel-total');
+      tot.textContent = '$' + formatNum(val);
+      tot.style.color = '#0EF3C5';
+
+      let html = '';
+
+      // Subtitle
+      html += `<div class="text-[10px] text-white/30 uppercase tracking-wider mb-1">${layerLabel}</div>`;
+      html += `<div class="text-xs text-white/40 mb-4">${pctWorld}% of world total${perCap > 0 ? ' · $' + formatNum(perCap) + ' per person' : ''} · GDP $${formatNum(c.gdp_usd)}</div>`;
+
+      if (layer === 'all') {
+        // === ALL CAPITAL: full breakdown ===
+        const entries = Object.entries(c.breakdown).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+        const mx = entries[0]?.[1] || 1;
+        html += `<div class="mb-5">
+          <div class="text-[10px] text-white/30 uppercase tracking-wider mb-2">Asset Breakdown</div>
+          ${entries.map(([k,v]) => {
+            const pct = (v/mx)*100;
+            const col = ASSET_COLORS[k]||'#666';
+            const LABEL_MAP = {real_estate:'Real Estate',stocks:'Stocks',bonds:'Bonds & Debt',pensions:'Pensions',pe_hf:'PE/HF',sovereign_wealth:'Sovereign Wealth',billionaires:'Billionaires',central_bank:'Central Bank',crypto:'Crypto',bigtech:'Big Tech',vc:'VC',insurance:'Insurance'};
+            const lbl = LABEL_MAP[k] || k;
+            return `<div class="breakdown-row">
+              <div class="w-24 text-xs text-white/50 shrink-0">${lbl}</div>
+              <div class="flex-1"><div class="breakdown-bar" style="width:${pct}%;background:${col}"></div></div>
+              <div class="text-xs text-white/70 font-mono w-16 text-right">$${formatNum(v)}</div>
+            </div>`;
+          }).join('')}
+        </div>`;
+
+        // Companies
+        if (c.top_companies?.length) {
+          html += `<div class="mb-5">
+            <div class="text-[10px] text-white/30 uppercase tracking-wider mb-2">Largest Companies</div>
+            ${c.top_companies.map(co => `<div class="flex justify-between items-center py-1.5 border-b border-white/5">
+              <div class="text-sm">${co.name}</div>
+              <div class="text-right">
+                <div class="text-xs font-mono text-amber-400">$${formatNum(co.market_cap)}</div>
+                ${co.cash ? `<div class="text-[10px] text-white/30">${formatNum(co.cash)} cash</div>` : ''}
+              </div>
+            </div>`).join('')}
+          </div>`;
+        }
+
+        // Billionaires summary
+        if (c.top_billionaires?.length) {
+          html += `<div class="mb-3">
+            <div class="text-[10px] text-white/30 uppercase tracking-wider mb-2">Billionaires <span class="text-white/20">(${c.num_billionaires || 0})</span></div>
+            ${c.top_billionaires.slice(0,3).map(b => `<div class="flex justify-between items-center py-1.5 border-b border-white/5">
+              <div><div class="text-sm">${b.name}</div><div class="text-[10px] text-white/30">${b.source}</div></div>
+              <div class="text-sm font-mono text-amber-400">$${formatNum(b.worth)}</div>
+            </div>`).join('')}
+          </div>`;
+        }
+
+      } else if (layer === 'stocks') {
+        // === STOCK MARKETS ===
+        if (c.top_companies?.length) {
+          const totalMcap = c.top_companies.reduce((s,co) => s + co.market_cap, 0);
+          const totalCash = c.top_companies.reduce((s,co) => s + (co.cash||0), 0);
+          html += `<div class="flex gap-4 mb-4">
+            <div><div class="text-lg font-mono" style="color:#38bdf8">${c.top_companies.length}</div><div class="text-[10px] text-white/30">top companies</div></div>
+            <div><div class="text-lg font-mono text-white/70">$${formatNum(totalCash)}</div><div class="text-[10px] text-white/30">cash on hand</div></div>
+          </div>`;
+          html += `<div class="mb-4">
+            <div class="text-[10px] text-white/30 uppercase tracking-wider mb-2">Companies by Market Cap</div>
+            ${c.top_companies.map(co => {
+              const pct = (co.market_cap / c.top_companies[0].market_cap) * 100;
+              return `<div class="py-2 border-b border-white/5">
+                <div class="flex justify-between items-center mb-1">
+                  <div class="text-sm font-medium">${co.name}</div>
+                  <div class="text-sm font-mono" style="color:#38bdf8">$${formatNum(co.market_cap)}</div>
+                </div>
+                <div class="w-full bg-white/5 rounded-full h-1.5">
+                  <div class="h-1.5 rounded-full" style="width:${pct}%;background:#38bdf8"></div>
+                </div>
+                ${co.cash ? `<div class="text-[10px] text-white/30 mt-1">$${formatNum(co.cash)} cash reserves</div>` : ''}
+              </div>`;
+            }).join('')}
+          </div>`;
+          if (c.gdp_usd) {
+            html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg">Stock market = <span class="text-white/70 font-mono">${(val/c.gdp_usd*100).toFixed(0)}%</span> of GDP</div>`;
+          }
+        }
+
+      } else if (layer === 'billionaires') {
+        // === BILLIONAIRES ===
+        const numB = c.num_billionaires || c.top_billionaires?.length || 0;
+        const avgWorth = numB > 0 && val > 0 ? val / numB : 0;
+        html += `<div class="flex gap-4 mb-4">
+          <div><div class="text-lg font-mono text-amber-400">${numB}</div><div class="text-[10px] text-white/30">billionaires</div></div>
+          <div><div class="text-lg font-mono text-white/70">$${formatNum(avgWorth)}</div><div class="text-[10px] text-white/30">avg net worth</div></div>
+        </div>`;
+        if (c.gdp_usd && val) {
+          const xGdp = (val / c.gdp_usd).toFixed(1);
+          html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg mb-4">Combined wealth = <span class="text-white/70 font-mono">${xGdp}x</span> the country's GDP</div>`;
+        }
+        if (c.top_billionaires?.length) {
+          html += `<div class="mb-3">
+            <div class="text-[10px] text-white/30 uppercase tracking-wider mb-2">Full List</div>
+            ${c.top_billionaires.map((b,i) => `<div class="flex justify-between items-center py-2 border-b border-white/5">
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-white/20 w-4">${i+1}</span>
+                <div><div class="text-sm">${b.name}</div><div class="text-[10px] text-white/30">${b.source}</div></div>
+              </div>
+              <div class="text-sm font-mono text-amber-400">$${formatNum(b.worth)}</div>
+            </div>`).join('')}
+          </div>`;
+        }
+
+      } else if (layer === 'pe_hf' || layer === 'vc') {
+        // === PE/HF & VC ===
+        if (c.vc_stats) {
+          const vc = c.vc_stats;
+          html += `<div class="flex gap-4 mb-4">
+            <div><div class="text-lg font-mono text-emerald-400">$${formatNum(vc.total_annual_usd)}</div><div class="text-[10px] text-white/30">annual funding</div></div>
+            <div><div class="text-lg font-mono text-white/70">${vc.num_deals.toLocaleString()}</div><div class="text-[10px] text-white/30">deals/year</div></div>
+          </div>`;
+          html += `<div class="mb-4">
+            <div class="text-[10px] text-white/30 uppercase tracking-wider mb-2">Top Sectors</div>
+            ${vc.top_sectors.map(s => {
+              return `<div class="flex items-center gap-2 py-1">
+                <div class="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
+                <span class="text-sm">${s}</span>
+              </div>`;
+            }).join('')}
+          </div>`;
+          if (vc.notable_rounds?.length) {
+            html += `<div class="mb-4">
+              <div class="text-[10px] text-white/30 uppercase tracking-wider mb-2">Notable Rounds</div>
+              ${vc.notable_rounds.map(r => `<div class="py-2 border-b border-white/5">
+                <div class="flex justify-between items-center">
+                  <div class="text-sm font-medium">${r.company}</div>
+                  <div class="text-sm font-mono text-emerald-400">$${formatNum(r.amount)}</div>
+                </div>
+                <div class="text-[10px] text-white/30">${r.sector}</div>
+              </div>`).join('')}
+            </div>`;
+          }
+          if (val && c.gdp_usd) {
+            html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg">${layer === 'vc' ? 'VC' : 'PE/HF'} = <span class="text-white/70 font-mono">${(val/c.gdp_usd*100).toFixed(1)}%</span> of GDP</div>`;
+          }
+        }
+
+      } else if (layer === 'real_estate') {
+        // === REAL ESTATE ===
+        const gdpRatio = c.gdp_usd ? (val / c.gdp_usd).toFixed(1) : '?';
+        const rePerCap = pop > 0 ? Math.round(val / pop) : 0;
+        html += `<div class="flex gap-4 mb-4">
+          <div><div class="text-lg font-mono" style="color:#0EF3C5">${gdpRatio}x</div><div class="text-[10px] text-white/30">GDP ratio</div></div>
+          ${rePerCap > 0 ? `<div><div class="text-lg font-mono text-white/70">$${formatNum(rePerCap)}</div><div class="text-[10px] text-white/30">per person</div></div>` : ''}
+        </div>`;
+        html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg mb-4">
+          Real estate is the <span class="text-white/70">single largest store of wealth</span> globally at $380T — more than all stock markets and bonds combined.
+        </div>`;
+        if (c.breakdown.stocks) {
+          html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg">
+            Real estate here is <span class="text-white/70 font-mono">${(val / c.breakdown.stocks).toFixed(1)}x</span> the stock market
+          </div>`;
+        }
+
+      } else if (layer === 'sovereign_wealth') {
+        // === SOVEREIGN WEALTH ===
+        const swPerCap = pop > 0 ? Math.round(val / pop) : 0;
+        html += `<div class="flex gap-4 mb-4">
+          ${c.gdp_usd && val ? `<div><div class="text-lg font-mono" style="color:#04E2B7">${(val/c.gdp_usd*100).toFixed(0)}%</div><div class="text-[10px] text-white/30">of GDP</div></div>` : ''}
+          ${swPerCap > 0 ? `<div><div class="text-lg font-mono text-white/70">$${formatNum(swPerCap)}</div><div class="text-[10px] text-white/30">per citizen</div></div>` : ''}
+        </div>`;
+        if (val === 0) {
+          html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg">This country has no sovereign wealth fund.</div>`;
+        } else {
+          html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg mb-3">
+            Sovereign wealth funds invest government surplus — typically from oil, trade, or fiscal reserves — into global assets for future generations.
+          </div>`;
+        }
+
+      } else if (layer === 'bonds') {
+        // === BONDS & DEBT ===
+        const debtGdp = c.gdp_usd ? (val / c.gdp_usd * 100).toFixed(0) : '?';
+        const debtPerCap = pop > 0 ? Math.round(val / pop) : 0;
+        html += `<div class="flex gap-4 mb-4">
+          <div><div class="text-lg font-mono" style="color:#025385">${debtGdp}%</div><div class="text-[10px] text-white/30">debt-to-GDP</div></div>
+          ${debtPerCap > 0 ? `<div><div class="text-lg font-mono text-white/70">$${formatNum(debtPerCap)}</div><div class="text-[10px] text-white/30">per person</div></div>` : ''}
+        </div>`;
+        const debtPct = Number(debtGdp);
+        let debtContext = '';
+        if (debtPct > 200) debtContext = 'Extremely high debt burden — among the most indebted nations.';
+        else if (debtPct > 100) debtContext = 'High debt-to-GDP — debt exceeds annual economic output.';
+        else if (debtPct > 60) debtContext = 'Moderate debt levels.';
+        else debtContext = 'Relatively low debt burden.';
+        html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg">${debtContext}</div>`;
+
+      } else if (layer === 'pensions') {
+        // === PENSIONS ===
+        const pensionPerCap = pop > 0 ? Math.round(val / pop) : 0;
+        const pensionGdp = c.gdp_usd ? (val / c.gdp_usd * 100).toFixed(0) : '?';
+        html += `<div class="flex gap-4 mb-4">
+          <div><div class="text-lg font-mono" style="color:#fb923c">${pensionGdp}%</div><div class="text-[10px] text-white/30">of GDP</div></div>
+          ${pensionPerCap > 0 ? `<div><div class="text-lg font-mono text-white/70">$${formatNum(pensionPerCap)}</div><div class="text-[10px] text-white/30">saved per person</div></div>` : ''}
+        </div>`;
+        let pensionContext = '';
+        const ppct = Number(pensionGdp);
+        if (ppct > 100) pensionContext = 'Exceptionally well-funded pension system — savings exceed GDP.';
+        else if (ppct > 50) pensionContext = 'Strong pension system with substantial savings.';
+        else if (ppct > 10) pensionContext = 'Moderate pension coverage.';
+        else pensionContext = 'Limited formal pension system — most retirement security comes from family and informal savings.';
+        html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg">${pensionContext}</div>`;
+
+      } else if (layer === 'central_bank') {
+        // === CENTRAL BANKS ===
+        const resGdp = c.gdp_usd ? (val / c.gdp_usd * 100).toFixed(0) : '?';
+        html += `<div class="flex gap-4 mb-4">
+          <div><div class="text-lg font-mono" style="color:#038298">${resGdp}%</div><div class="text-[10px] text-white/30">reserves / GDP</div></div>
+          <div><div class="text-lg font-mono text-white/70">$${formatNum(val)}</div><div class="text-[10px] text-white/30">total reserves</div></div>
+        </div>`;
+        html += `<div class="text-xs text-white/40 p-3 bg-white/5 rounded-lg">
+          Central bank reserves are the country's financial safety net — foreign currencies, gold, and bonds held to stabilize the economy and defend the currency.
+        </div>`;
+
+      } else if (layer === 'crypto') {
+        // === CRYPTO ===
+        const cs = c.crypto_stats;
+        const cryptoPct = c.total_capital_usd ? ((val / c.total_capital_usd) * 100).toFixed(2) : '?';
+        html += `<div class="flex gap-4 mb-4">
+          <div><div class="text-lg font-mono" style="color:#e879f9">${cryptoPct}%</div><div class="text-[10px] text-white/30">of total capital</div></div>
+          ${cs?.holders_m ? `<div><div class="text-lg font-mono text-white/70">${cs.holders_m}M</div><div class="text-[10px] text-white/30">holders</div></div>` : ''}
+        </div>`;
+        if (cs) {
+          if (cs.exchanges?.length) {
+            html += `<div class="mb-4">
+              <div class="text-[10px] text-white/30 uppercase tracking-wider mb-2">Exchanges</div>
+              ${cs.exchanges.map(ex => `<div class="flex items-center gap-2 py-1.5 border-b border-white/5">
+                <div class="w-1.5 h-1.5 rounded-full" style="background:#e879f9"></div>
+                <span class="text-sm">${ex}</span>
+              </div>`).join('')}
+            </div>`;
+          }
+          html += `<div class="text-xs p-3 bg-white/5 rounded-lg">
+            <div class="text-white/30 text-[10px] uppercase tracking-wider mb-1">Regulation</div>
+            <div class="text-white/60">${cs.regulation}</div>
+          </div>`;
+        }
+      }
+
+      document.getElementById('panel-breakdown').innerHTML = html;
+    }
+
+    document.getElementById('panel-close').addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('panel').style.display = 'none';
+    });
+
+    // Scale bar
+    function renderScaleBar(s) {
+      const total = s.asset_classes.reduce((a,c)=>a+c.total_usd,0);
+      document.getElementById('scale-total').textContent = '$'+formatNum(total);
+      document.getElementById('scale-segments').innerHTML = s.asset_classes.map(c => {
+        const pct = (c.total_usd/total)*100;
+        return pct < 0.5 ? '' : `<div class="scale-segment" style="width:${pct}%;background:${c.color}" title="${c.name}: $${formatNum(c.total_usd)}"></div>`;
+      }).join('');
+      document.getElementById('scale-labels').innerHTML = s.asset_classes.map(c => {
+        const pct = (c.total_usd/total)*100;
+        return pct < 3 ? `<div style="width:${pct}%"></div>` : `<div style="width:${pct}%" class="text-[9px] text-white/40 truncate px-0.5">${c.name}</div>`;
+      }).join('');
+    }
+
+    // Init
+    async function init() {
+      const el = document.getElementById('globe');
+
+      myGlobe = Globe()(el)
+        .backgroundColor('#0d1117')
+        .showGlobe(true)
+        .showAtmosphere(true)
+        .atmosphereColor('#025385')
+        .atmosphereAltitude(0.08)
+        .polygonGeoJsonGeometry(d => d.geometry)
+        .polygonCapColor(d => d._color)
+        .polygonSideColor(() => 'rgba(0,0,0,0)')
+        .polygonStrokeColor(() => 'rgba(255,255,255,0.12)')
+        .polygonAltitude(d => d._alt)
+        .polygonLabel(d => d._label)
+        .onPolygonHover(d => {
+          el.style.cursor = d ? 'pointer' : 'grab';
+        })
+        .polygonsTransitionDuration(0)
+        .width(el.clientWidth)
+        .height(el.clientHeight);
+
+      // Handle clicks: both polygon and globe surface
+      function handleGlobeClick(coords) {
+        if (!coords) return;
+        const {lat, lng} = coords;
+        let closest = null, minDist = Infinity;
+        capitalData.forEach(c => {
+          const d = Math.pow(c.lat - lat, 2) + Math.pow(c.lng - lng, 2);
+          if (d < minDist) { minDist = d; closest = c; }
+        });
+        if (closest && minDist < 500) {
+          showPanel(closest.country_code);
+        }
+      }
+      myGlobe.onPolygonClick(d => {
+        if (d._code) {
+          // Use the polygon's country directly if we have data
+          if (countryLookup[d._code]) {
+            showPanel(d._code);
+          } else {
+            // Polygon exists but no capital data — find nearest
+            const coords = d.properties;
+            handleGlobeClick({lat: 0, lng: 0}); // fallback
+          }
+        }
+      });
+      myGlobe.onGlobeClick(handleGlobeClick);
+
+      // Also listen for raw click on the container as ultimate fallback
+      let clickStart = 0;
+      el.addEventListener('mousedown', () => { clickStart = Date.now(); });
+      el.addEventListener('mouseup', (e) => {
+        // Only treat as click if mousedown was < 200ms ago (not a drag)
+        if (Date.now() - clickStart > 200) return;
+        // Get the globe's lat/lng from screen coordinates
+        const rect = el.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        // Use toGlobeCoords if available
+        const coords = myGlobe.toGlobeCoords(x, y);
+        if (coords) {
+          handleGlobeClick(coords);
+        }
+      });
+
+      // Dark ocean globe
+      const mat = myGlobe.globeMaterial();
+      mat.color.set(0x0d1420);
+      mat.emissive.set(0x0d1420);
+      mat.emissiveIntensity = 0.3;
+
+
+      window.addEventListener('resize', () => {
+        myGlobe.width(el.clientWidth).height(el.clientHeight);
+      });
+
+      // Load data
+      const [geoRes, dataRes, scaleRes] = await Promise.all([
+        fetch('/data/countries.geojson'),
+        fetch('/data/globe_total.json'),
+        fetch('/data/scale_totals.json'),
+      ]);
+
+      const geo = await geoRes.json();
+      geoFeatures = geo.features.filter(f => f.geometry);
+      capitalData = await dataRes.json();
+      capitalData.forEach(c => { countryLookup[c.country_code] = c; });
+      const scale = await scaleRes.json();
+
+      console.log('Loaded', geoFeatures.length, 'countries,', capitalData.length, 'capital entries');
+
+      renderLayer('all');
+      renderScaleBar(scale);
+
+      // Build toggles
+      const togglesEl = document.getElementById('layer-toggles');
+      LAYERS.forEach(layer => {
+        const btn = document.createElement('button');
+        btn.className = 'layer-toggle' + (layer.key === 'all' ? ' active' : '');
+        btn.innerHTML = `<span class="dot" style="background:${layer.color}"></span>${layer.label}`;
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.layer-toggle').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          renderLayer(layer.key);
+          // If panel is open, refresh it with new layer context
+          const panel = document.getElementById('panel');
+          if (panel.style.display === 'block' && lastPanelCode) {
+            showPanel(lastPanelCode);
+          }
+        });
+        togglesEl.appendChild(btn);
+      });
+
+      // Status
+      try {
+        const r = await fetch('/data/status.json');
+        if (r.ok) { const s = await r.json(); document.getElementById('status').textContent = 'Updated: '+s.updated_at; }
+      } catch(e) {}
+    }
+
+    init();
+  </script>
+</body>
+</html>

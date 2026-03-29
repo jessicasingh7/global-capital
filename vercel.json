@@ -1,0 +1,7 @@
+{
+  "buildCommand": "",
+  "outputDirectory": "static",
+  "rewrites": [
+    { "source": "/data/:path*", "destination": "/data/:path*" }
+  ]
+}
