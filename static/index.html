@@ -11,8 +11,8 @@
 </head>
 <body class="bg-[#0d1117] text-white overflow-hidden h-screen flex flex-col">
 
-  <header class="flex items-center justify-center px-6 py-3 border-b border-white/10 z-10 bg-[#0d1117]/90 backdrop-blur relative">
-    <div class="text-center">
+  <header class="flex items-center justify-between px-6 py-3 border-b border-white/10 z-10 bg-[#0d1117]/90 backdrop-blur relative">
+    <div class="text-center flex-1">
       <h1 class="text-xl font-bold tracking-tight">Global Capital</h1>
       <p class="text-xs text-white/40">Every dollar on Earth, mapped.</p>
     </div>
@@ -23,7 +23,13 @@
     <div class="flex-1 relative">
       <div id="globe" style="width:100%;height:100%"></div>
 
-      <div id="layer-toggles" class="absolute top-4 left-4 flex flex-col gap-1.5 z-10"></div>
+      <div id="layer-toggles" class="absolute top-4 left-4 flex flex-col gap-1.5 z-10" style="max-height:calc(100vh - 180px);overflow-y:auto"></div>
+
+      <button id="search-btn" onclick="openPanel(); setTimeout(()=>document.getElementById('country-search').focus(), 100)"
+        class="absolute top-4 right-4 z-10 bg-white/5 backdrop-blur-md border border-white/10 rounded-lg px-4 py-2 text-sm text-white/50 hover:text-white hover:bg-white/10 cursor-pointer flex items-center justify-center gap-2">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <span>Search Country</span>
+      </button>
 
       <div id="color-legend" class="absolute bottom-4 left-4 z-10 bg-white/5 backdrop-blur-md rounded-lg px-3 py-2 border border-white/10">
         <div class="text-[9px] text-white/40 uppercase tracking-wider mb-1.5">Capital Concentration</div>
@@ -40,14 +46,38 @@
     </div>
 
   <!-- Panel: fixed overlay on the right -->
-  <div id="panel" class="fixed top-0 right-0 w-96 bg-[#0d1117] border-l border-white/10 overflow-y-auto z-50" style="display:none;bottom:0">
-    <div class="p-5">
-      <div class="flex items-center justify-between mb-4">
-        <h2 id="panel-title" class="text-lg font-semibold"></h2>
+  <div id="panel" class="fixed top-0 right-0 w-96 bg-[#0d1117] border-l border-white/10 overflow-y-auto z-50" style="bottom:0;transform:translateX(100%);transition:transform 0.3s ease">
+    <div class="p-4 sticky top-0 bg-[#0d1117] z-10">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-xs text-white/30 uppercase tracking-wider">Explore</span>
         <button id="panel-close" class="text-white/40 hover:text-white text-2xl leading-none cursor-pointer px-2">&times;</button>
+      </div>
+      <div class="relative">
+        <input id="country-search" type="text" placeholder="Search Country"
+          class="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-white/25 w-full text-center focus:text-left"
+          autocomplete="off">
+        <div id="search-results" class="absolute top-full left-0 right-0 mt-1 bg-[#161b22] border border-white/10 rounded-lg overflow-hidden z-50" style="display:none"></div>
+      </div>
+    </div>
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-2">
+        <h2 id="panel-title" class="text-lg font-semibold"></h2>
       </div>
       <div id="panel-total" class="text-2xl font-bold mb-4"></div>
       <div id="panel-breakdown" class="space-y-2"></div>
+    </div>
+  </div>
+
+  <!-- Time slider -->
+  <div id="time-slider-bar" style="position:fixed;bottom:90px;left:0;right:0;z-index:60;padding:0 24px;transition:right 0.4s ease;display:none">
+    <div class="flex items-center gap-3">
+      <button id="time-play" class="text-white/40 hover:text-white text-sm cursor-pointer" onclick="toggleTimePlay()">&#9654;</button>
+      <span id="time-year" class="text-lg font-mono text-white/70 w-12">2024</span>
+      <input id="time-range" type="range" min="1980" max="2024" value="2024" step="0.1"
+        class="flex-1 h-1 appearance-none bg-white/10 rounded-full outline-none cursor-pointer"
+        oninput="onTimeSliderChange(this.value)">
+      <button id="time-close" class="text-white/30 hover:text-white text-xs cursor-pointer px-2 py-1 bg-white/5 rounded"
+        onclick="closeTimeSlider()">Exit Timeline</button>
     </div>
   </div>
 
@@ -81,7 +111,25 @@
       { key: 'crypto', label: 'Crypto', color: '#e879f9' },
     ];
 
-    let myGlobe, geoFeatures, capitalData, countryLookup = {}, currentLayer = 'all', lastPanelCode = null;
+    const FLOW_VIEWS = [
+      { key: 'vc_sector', label: 'VC by Sector' },
+      { key: 'vc_country', label: 'VC by Country' },
+      { key: 'ask', label: 'Ask AI' },
+    ];
+
+    let myGlobe, geoFeatures, capitalData, countryLookup = {}, currentLayer = 'all', lastPanelCode = null, activeFlowKey = null;
+
+    function openPanel() {
+      document.getElementById('panel').style.transform = 'translateX(0)';
+      document.getElementById('scale-bar').style.right = '384px';
+    }
+    function closePanel() {
+      document.getElementById('panel').style.transform = 'translateX(100%)';
+      document.getElementById('scale-bar').style.right = '0';
+    }
+    function isPanelOpen() {
+      return document.getElementById('panel').style.transform === 'translateX(0)' || document.getElementById('panel').style.transform === 'translateX(0px)';
+    }
 
     function formatNum(n) {
       if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T';
@@ -90,8 +138,59 @@
       return n.toLocaleString();
     }
 
+    const FLOW_TYPE_MAP = {
+      'flows_vc': 'vc', 'flows_trade': 'trade',
+      'flows_swf': 'swf', 'flows_remittance': 'remittance',
+    };
+
+    function renderFlowArcs(layerKey) {
+      if (!window.flowsData || !FLOW_TYPE_MAP[layerKey]) {
+        myGlobe.arcsData([]);
+        return;
+      }
+      const flowType = FLOW_TYPE_MAP[layerKey];
+      const layerInfo = LAYERS.find(l => l.key === layerKey);
+      const color = layerInfo?.color || '#0EF3C5';
+
+      const flows = window.flowsData.filter(f => f.type === flowType);
+      const maxAmount = Math.max(...flows.map(f => f.amount));
+
+      const typeLabels = {
+        vc: 'Venture Capital & PE',
+        trade: 'Trade (Goods & Services)',
+        swf: 'Sovereign Wealth Fund Investment',
+        remittance: 'Remittances (Workers)',
+      };
+
+      const arcs = flows.map(f => {
+        const fromC = countryLookup[f.from];
+        const toC = countryLookup[f.to];
+        if (!fromC || !toC) return null;
+        const t = Math.pow(f.amount / maxAmount, 0.4);
+        return {
+          startLat: fromC.lat,
+          startLng: fromC.lng,
+          endLat: toC.lat,
+          endLng: toC.lng,
+          color: [color, color + '66'],
+          stroke: 0.8 + t * 3,
+          altitude: 0.08 + t * 0.2,
+          label: `<div style="background:rgba(15,15,30,0.95);padding:12px 16px;border-radius:8px;font-size:12px;color:white;border:1px solid rgba(255,255,255,0.12);pointer-events:none;min-width:200px">
+            <div style="color:rgba(255,255,255,0.35);font-size:9px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">${typeLabels[flowType] || flowType}</div>
+            <div style="font-weight:700;font-size:14px;margin-bottom:2px">${fromC.country_name} → ${toC.country_name}</div>
+            <div style="color:${color};font-family:monospace;font-size:18px;font-weight:700">$${formatNum(f.amount)}</div>
+            <div style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:4px">${f.label}</div>
+          </div>`,
+        };
+      }).filter(Boolean);
+
+      myGlobe.arcsData(arcs);
+    }
+
     function renderLayer(layerKey) {
       currentLayer = layerKey;
+
+
       let maxVal = 0;
       capitalData.forEach(c => {
         const v = layerKey === 'all' ? c.total_capital_usd : (c.breakdown[layerKey] || 0);
@@ -245,8 +344,7 @@
       const c = countryLookup[code];
       if (!c) return;
       lastPanelCode = code;
-      document.getElementById('panel').style.display = 'block';
-      document.getElementById('scale-bar').style.right = '384px';
+      openPanel();
       renderCountryScaleBar(code);
 
       const layer = currentLayer;
@@ -507,8 +605,7 @@
 
     document.getElementById('panel-close').addEventListener('click', (e) => {
       e.stopPropagation();
-      document.getElementById('panel').style.display = 'none';
-      document.getElementById('scale-bar').style.right = '0';
+      closePanel();
       resetScaleBar();
     });
 
@@ -583,6 +680,20 @@
           el.style.cursor = d ? 'pointer' : 'grab';
         })
         .polygonsTransitionDuration(0)
+        // Arc layer for capital flows
+        .arcsData([])
+        .arcStartLat(d => d.startLat)
+        .arcStartLng(d => d.startLng)
+        .arcEndLat(d => d.endLat)
+        .arcEndLng(d => d.endLng)
+        .arcColor(d => d.color)
+        .arcAltitude(d => d.altitude || 0.15)
+        .arcStroke(d => d.stroke)
+        .arcDashLength(1)
+        .arcDashGap(0)
+        .arcDashAnimateTime(0)
+        .arcLabel(d => d.label)
+        .arcsTransitionDuration(300)
         .width(el.clientWidth)
         .height(el.clientHeight);
 
@@ -661,28 +772,469 @@
 
       // Build toggles
       const togglesEl = document.getElementById('layer-toggles');
+
+      // Capital layer toggles (mutually exclusive)
       LAYERS.forEach(layer => {
         const btn = document.createElement('button');
         btn.className = 'layer-toggle' + (layer.key === 'all' ? ' active' : '');
+        btn.dataset.type = 'capital';
         btn.innerHTML = `<span class="dot" style="background:${layer.color}"></span>${layer.label}`;
         btn.addEventListener('click', () => {
-          document.querySelectorAll('.layer-toggle').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.layer-toggle[data-type="capital"]').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
-          renderLayer(layer.key);
-          // If panel is open, refresh it with new layer context
-          const panel = document.getElementById('panel');
-          if (panel.style.display === 'block' && lastPanelCode) {
+          if (timelineActive) {
+            onTimeSliderChange(document.getElementById('time-range').value);
+          } else {
+            renderLayer(layer.key);
+          }
+          if (isPanelOpen() && lastPanelCode) {
             showPanel(lastPanelCode);
           }
         });
         togglesEl.appendChild(btn);
       });
 
+      // Flow view toggles
+      const flowDivider = document.createElement('div');
+      flowDivider.style.cssText = 'height:1px;background:rgba(255,255,255,0.08);margin:6px 0';
+      togglesEl.appendChild(flowDivider);
+      const flowLabel = document.createElement('div');
+      flowLabel.style.cssText = 'font-size:9px;color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.5px;padding:0 4px';
+      flowLabel.textContent = 'Money Flows';
+      togglesEl.appendChild(flowLabel);
+
+      FLOW_VIEWS.forEach(flow => {
+        const btn = document.createElement('button');
+        btn.className = 'layer-toggle';
+        btn.dataset.type = 'flow';
+        btn.innerHTML = `<span class="dot" style="background:#0EF3C5"></span>${flow.label}`;
+        btn.addEventListener('click', () => {
+          if (activeFlowKey === flow.key) {
+            activeFlowKey = null;
+            btn.classList.remove('active');
+            closePanel();
+          } else {
+            document.querySelectorAll('.layer-toggle[data-type="flow"]').forEach(b => b.classList.remove('active'));
+            activeFlowKey = flow.key;
+            btn.classList.add('active');
+            showFlowPanel(flow.key);
+          }
+        });
+        togglesEl.appendChild(btn);
+      });
+
+      // Timeline button
+      const timeBtn = document.createElement('button');
+      timeBtn.className = 'layer-toggle';
+      timeBtn.innerHTML = '<span class="dot" style="background:#fff"></span>Timeline';
+      timeBtn.style.marginTop = '8px';
+      timeBtn.addEventListener('click', () => openTimeSlider());
+      togglesEl.appendChild(timeBtn);
+
+      // Load flows data
+      try {
+        const fRes = await fetch('/data/flows.json');
+        if (fRes.ok) window.flowsData = await fRes.json();
+      } catch(e) {}
+      try {
+        const sfRes = await fetch('/data/sector_flows.json');
+        if (sfRes.ok) window.sectorFlows = await sfRes.json();
+      } catch(e) {}
+
+      // Load historical data
+      try {
+        const hRes = await fetch('/data/historical.json');
+        if (hRes.ok) window.historicalData = await hRes.json();
+      } catch(e) {}
+
       // Status
       try {
         const r = await fetch('/data/status.json');
         if (r.ok) { const s = await r.json(); document.getElementById('status').textContent = 'Updated: '+s.updated_at; }
       } catch(e) {}
+
+      // Search
+      const searchInput = document.getElementById('country-search');
+      const searchResults = document.getElementById('search-results');
+
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.toLowerCase().trim();
+        if (q.length < 1) { searchResults.style.display = 'none'; return; }
+
+        const matches = capitalData
+          .filter(c => c.country_name.toLowerCase().includes(q))
+          .sort((a,b) => b.total_capital_usd - a.total_capital_usd)
+          .slice(0, 6);
+
+        if (matches.length === 0) {
+          searchResults.style.display = 'none';
+          return;
+        }
+
+        searchResults.style.display = 'block';
+        searchResults.innerHTML = matches.map(c => `
+          <div class="search-result px-3 py-2 cursor-pointer hover:bg-white/10 flex justify-between items-center" data-code="${c.country_code}">
+            <span class="text-sm">${c.country_name}</span>
+            <span class="text-xs text-white/40 font-mono">$${formatNum(c.total_capital_usd)}</span>
+          </div>
+        `).join('');
+
+        searchResults.querySelectorAll('.search-result').forEach(el => {
+          el.addEventListener('click', () => {
+            const code = el.dataset.code;
+            const c = countryLookup[code];
+            if (c) {
+              myGlobe.pointOfView({ lat: c.lat, lng: c.lng, altitude: 2 }, 800);
+            }
+            showPanel(code);
+            searchInput.value = '';
+            searchResults.style.display = 'none';
+          });
+        });
+      });
+
+      // Close search on click outside
+      document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+          searchResults.style.display = 'none';
+        }
+      });
+
+      // Enter key selects first result
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const first = searchResults.querySelector('.search-result');
+          if (first) first.click();
+        }
+        if (e.key === 'Escape') {
+          searchInput.value = '';
+          searchResults.style.display = 'none';
+        }
+      });
+    }
+
+    // Chat
+    async function sendChat() {
+      const input = document.getElementById('chat-input');
+      const messages = document.getElementById('chat-messages');
+      const q = input.value.trim();
+      if (!q) return;
+
+      // Show user message
+      messages.innerHTML += `<div style="margin-bottom:12px;padding:8px 12px;background:rgba(14,243,197,0.06);border-left:2px solid #0EF3C5;border-radius:4px;font-size:13px;color:rgba(255,255,255,0.8)">${q}</div>`;
+      input.value = '';
+
+      // Show loading
+      const loadingId = 'loading-' + Date.now();
+      messages.innerHTML += `<div id="${loadingId}" style="margin-bottom:12px;font-size:13px;color:rgba(255,255,255,0.25)">Analyzing capital data...</div>`;
+      messages.scrollTop = messages.scrollHeight;
+
+      try {
+        const resp = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            message: q,
+            country_code: lastPanelCode || null,
+          }),
+        });
+        const data = await resp.json();
+
+        // Replace loading with response
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) {
+          // Parse markdown-ish formatting
+          let text = data.response
+            .replace(/\*\*(.+?)\*\*/g, '<span style="color:#0EF3C5;font-weight:600">$1</span>')
+            .replace(/\*(.+?)\*/g, '<em style="color:rgba(255,255,255,0.5)">$1</em>')
+            .replace(/\$(\d[\d,.]+[TB])/g, '<span style="color:#0EF3C5;font-family:monospace">$$1</span>')
+            .replace(/\n\n/g, '</p><p style="margin-top:10px">')
+            .replace(/\n/g, '<br>');
+          loadingEl.innerHTML = `<div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.7"><p>${text}</p></div>`;
+          loadingEl.className = 'mb-5';
+        }
+      } catch (e) {
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) {
+          loadingEl.textContent = 'Error: could not get response';
+          loadingEl.className = 'mb-3 text-sm text-red-400';
+        }
+      }
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    // Flow panel
+    function showFlowPanel(viewKey) {
+      if (!window.sectorFlows) return;
+      const sf = window.sectorFlows;
+
+      document.getElementById('panel-title').textContent = '';
+      document.getElementById('panel-total').textContent = '';
+      openPanel();
+
+      let html = '';
+
+      if (viewKey === 'vc_sector') {
+        const data = sf.vc_by_sector;
+        const maxAmt = Math.max(...data.flows.map(f => f.amount));
+        html += `<div class="text-xs text-white/30 uppercase tracking-wider mb-1">${data.title}</div>`;
+        html += `<div class="text-lg font-mono mb-4" style="color:#0EF3C5">$${formatNum(data.total)}</div>`;
+        html += data.flows.map(f => {
+          const pct = (f.amount / maxAmt) * 100;
+          const changeColor = f.change >= 0 ? '#34d399' : '#f43f5e';
+          const changeIcon = f.change >= 0 ? '↑' : '↓';
+          return `<div class="mb-3">
+            <div class="flex justify-between items-center mb-1">
+              <span class="text-sm">${f.name}</span>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-mono text-white/60">$${formatNum(f.amount)}</span>
+                <span class="text-[10px] font-mono" style="color:${changeColor}">${changeIcon}${Math.abs(f.change)}%</span>
+              </div>
+            </div>
+            <div class="w-full bg-white/5 rounded-full h-2">
+              <div class="h-2 rounded-full transition-all duration-500" style="width:${pct}%;background:${f.color}"></div>
+            </div>
+          </div>`;
+        }).join('');
+
+      } else if (viewKey === 'vc_country') {
+        const data = sf.vc_by_country;
+        const maxAmt = Math.max(...data.flows.map(f => f.amount));
+        html += `<div class="text-xs text-white/30 uppercase tracking-wider mb-1">${data.title}</div>`;
+        html += `<div class="mb-4"></div>`;
+        html += data.flows.map(f => {
+          const pct = (f.amount / maxAmt) * 100;
+          const changeColor = f.change >= 0 ? '#34d399' : '#f43f5e';
+          const changeIcon = f.change >= 0 ? '↑' : '↓';
+          return `<div class="mb-3 cursor-pointer" onclick="if(countryLookup['${f.code}']){myGlobe.pointOfView({lat:countryLookup['${f.code}'].lat,lng:countryLookup['${f.code}'].lng,altitude:2},800)}">
+            <div class="flex justify-between items-center mb-1">
+              <div>
+                <span class="text-sm">${f.name}</span>
+                <span class="text-[10px] text-white/30 ml-1">${f.top_sector}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-mono text-white/60">$${formatNum(f.amount)}</span>
+                <span class="text-[10px] font-mono" style="color:${changeColor}">${changeIcon}${Math.abs(f.change)}%</span>
+              </div>
+            </div>
+            <div class="w-full bg-white/5 rounded-full h-2">
+              <div class="h-2 rounded-full transition-all duration-500" style="width:${pct}%;background:#0EF3C5"></div>
+            </div>
+          </div>`;
+        }).join('');
+
+      } else if (viewKey === 'ask') {
+        html += `<div class="text-xs text-white/30 uppercase tracking-wider mb-2">Ask About Global Capital</div>`;
+        html += `<div class="text-xs text-white/20 mb-4">Ask anything about where money is, how it flows, or what's changing.</div>`;
+        html += `<div id="chat-messages" style="min-height:200px;max-height:400px;overflow-y:auto;margin-bottom:12px"></div>`;
+        html += `<div class="flex gap-2">
+          <input id="chat-input" type="text" placeholder="e.g. Why is AI getting all the funding?"
+            class="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 outline-none focus:border-white/25"
+            onkeydown="if(event.key==='Enter')sendChat()">
+          <button onclick="sendChat()" class="px-3 py-2 rounded-lg text-sm font-medium" style="background:#0EF3C5;color:#0d1117">Ask</button>
+        </div>`;
+        // Add starter prompts
+        html += `<div class="flex flex-wrap gap-1.5 mt-3">
+          ${['Where is most capital concentrated?', 'Compare US vs China', 'What sectors are growing fastest?', 'Which country has most per person?'].map(q =>
+            `<button onclick="document.getElementById('chat-input').value='${q}';sendChat()" class="text-[10px] text-white/30 bg-white/5 border border-white/5 rounded px-2 py-1 hover:bg-white/10 hover:text-white/50 cursor-pointer">${q}</button>`
+          ).join('')}
+        </div>`;
+      }
+
+      document.getElementById('panel-breakdown').innerHTML = html;
+    }
+
+    // Timeline slider logic
+    let timePlayInterval = null;
+    let timelineActive = false;
+
+    // Map layer keys to historical data keys
+    const LAYER_TO_HIST = {
+      'all': null,  // sum all
+      'stocks': 'stocks',
+      'bonds': 'bonds',
+      'real_estate': 'gdp',  // proxy: scale by GDP ratio
+    };
+
+    function getHistValue(hist, layer) {
+      if (!hist) return 0;
+      if (layer === 'all') return (hist.gdp || 0) + (hist.stocks || 0) + (hist.bonds || 0);
+      if (layer === 'stocks') return hist.stocks || 0;
+      if (layer === 'bonds') return hist.bonds || 0;
+      // For layers without direct historical data, use GDP as proxy
+      return hist.gdp || 0;
+    }
+
+    function getHistLabel(layer) {
+      if (layer === 'all') return 'Total (GDP + Stocks + Debt)';
+      const info = LAYERS.find(l => l.key === layer);
+      return info ? info.label : layer;
+    }
+
+    function openTimeSlider() {
+      if (!window.historicalData) { alert('Historical data not loaded'); return; }
+      timelineActive = true;
+      document.getElementById('time-slider-bar').style.display = 'block';
+      const years = Object.keys(window.historicalData).sort();
+      const slider = document.getElementById('time-range');
+      slider.min = years[0];
+      slider.max = years[years.length - 1];
+      slider.value = years[0]; // Start at the beginning
+      onTimeSliderChange(slider.value);
+    }
+
+    function closeTimeSlider() {
+      timelineActive = false;
+      if (timePlayId) { cancelAnimationFrame(timePlayId); timePlayId = null; }
+      document.getElementById('time-slider-bar').style.display = 'none';
+      document.getElementById('time-play').innerHTML = '&#9654;';
+      renderLayer(currentLayer);
+    }
+
+    function lerpValue(v1, v2, t) {
+      return v1 + (v2 - v1) * t;
+    }
+
+    function getInterpolatedYearData(yearFloat) {
+      const y1 = Math.floor(yearFloat);
+      const y2 = Math.ceil(yearFloat);
+      const t = yearFloat - y1;
+      const d1 = window.historicalData[String(y1)];
+      const d2 = window.historicalData[String(y2)];
+      if (!d1) return d2 || {};
+      if (!d2 || y1 === y2) return d1;
+
+      // Interpolate all countries
+      const allCodes = new Set([...Object.keys(d1), ...Object.keys(d2)]);
+      const result = {};
+      for (const code of allCodes) {
+        const h1 = d1[code] || {};
+        const h2 = d2[code] || {};
+        result[code] = {
+          gdp: lerpValue(h1.gdp || 0, h2.gdp || 0, t),
+          stocks: lerpValue(h1.stocks || 0, h2.stocks || 0, t),
+          bonds: lerpValue(h1.bonds || 0, h2.bonds || 0, t),
+        };
+      }
+      return result;
+    }
+
+    function onTimeSliderChange(yearFloat) {
+      yearFloat = parseFloat(yearFloat);
+      document.getElementById('time-year').textContent = Math.round(yearFloat);
+      const yearData = getInterpolatedYearData(yearFloat);
+      if (!yearData || Object.keys(yearData).length === 0) return;
+      const year = Math.round(yearFloat);
+
+      const layer = currentLayer;
+      const layerInfo = LAYERS.find(l => l.key === layer);
+      const layerColor = layerInfo?.color || '#0EF3C5';
+
+      // Find max value for this layer in this year
+      let maxVal = 0;
+      for (const c in yearData) {
+        const v = getHistValue(yearData[c], layer);
+        if (v > maxVal) maxVal = v;
+      }
+
+      const polys = geoFeatures.map(f => {
+        const code = f.properties.ISO_A3;
+        const name = f.properties.NAME || code;
+        const hist = yearData[code];
+        const val = getHistValue(hist, layer);
+
+        const t = maxVal > 0 && val > 0 ? Math.pow(val / maxVal, 0.35) : 0;
+
+        // Use the current layer's color
+        const lr = parseInt(layerColor.slice(1,3), 16);
+        const lg = parseInt(layerColor.slice(3,5), 16);
+        const lb = parseInt(layerColor.slice(5,7), 16);
+        const color = val > 0 ? `rgb(${Math.round(20 + (lr-20)*t)},${Math.round(20 + (lg-20)*t)},${Math.round(30 + (lb-30)*t)})` : '#161b22';
+
+        // Tooltip
+        let details = '';
+        if (hist) {
+          if (layer === 'all') {
+            if (hist.gdp) details += `<div style="display:flex;justify-content:space-between;gap:12px"><span style="color:rgba(255,255,255,0.4)">GDP</span><span style="color:#0EF3C5;font-family:monospace">$${formatNum(hist.gdp)}</span></div>`;
+            if (hist.stocks) details += `<div style="display:flex;justify-content:space-between;gap:12px"><span style="color:rgba(255,255,255,0.4)">Stock Market</span><span style="color:#38bdf8;font-family:monospace">$${formatNum(hist.stocks)}</span></div>`;
+            if (hist.bonds) details += `<div style="display:flex;justify-content:space-between;gap:12px"><span style="color:rgba(255,255,255,0.4)">Gov Debt</span><span style="color:#025385;font-family:monospace">$${formatNum(hist.bonds)}</span></div>`;
+          } else {
+            details = `<div style="color:${layerColor};font-family:monospace;font-size:16px;font-weight:700">$${formatNum(val)}</div>`;
+          }
+        }
+
+        return {
+          ...f,
+          _color: color,
+          _alt: 0.006,
+          _label: `<div style="background:rgba(15,15,30,0.95);padding:10px 14px;border-radius:8px;font-size:12px;color:white;border:1px solid rgba(255,255,255,0.12);min-width:180px;pointer-events:none">
+            <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name} <span style="color:rgba(255,255,255,0.3)">${year}</span></div>
+            ${details || '<div style="color:rgba(255,255,255,0.3)">No data</div>'}
+          </div>`,
+          _code: code,
+        };
+      });
+
+      myGlobe.polygonsData(polys);
+
+      // Update scale bar
+      if (layer === 'all') {
+        const totals = {gdp: 0, stocks: 0, bonds: 0};
+        for (const c in yearData) {
+          totals.gdp += yearData[c].gdp || 0;
+          totals.stocks += yearData[c].stocks || 0;
+          totals.bonds += yearData[c].bonds || 0;
+        }
+        renderScaleBarData([
+          {name: 'GDP', value: totals.gdp, color: '#0EF3C5'},
+          {name: 'Stock Markets', value: totals.stocks, color: '#38bdf8'},
+          {name: 'Gov Debt', value: totals.bonds, color: '#025385'},
+        ], year + ' Global');
+      } else {
+        // Show top countries for this layer in this year
+        const ranked = Object.entries(yearData)
+          .map(([code, hist]) => ({code, name: capitalData.find(c => c.country_code === code)?.country_name || code, value: getHistValue(hist, layer)}))
+          .filter(c => c.value > 0)
+          .sort((a,b) => b.value - a.value)
+          .slice(0, 8);
+        renderScaleBarData(
+          ranked.map(c => ({name: c.name, value: c.value, color: layerColor})),
+          year + ' ' + getHistLabel(layer)
+        );
+      }
+    }
+
+    let timePlayId = null;
+
+    function toggleTimePlay() {
+      if (timePlayId) {
+        cancelAnimationFrame(timePlayId);
+        timePlayId = null;
+        document.getElementById('time-play').innerHTML = '&#9654;';
+        return;
+      }
+      document.getElementById('time-play').innerHTML = '&#9646;&#9646;';
+      const slider = document.getElementById('time-range');
+      let lastTime = 0;
+      const speed = 150; // ms per step
+      const increment = 0.2; // years per step
+      function step(timestamp) {
+        if (!timePlayId) return;
+        if (lastTime === 0) lastTime = timestamp;
+        if (timestamp - lastTime >= speed) {
+          lastTime = timestamp;
+          let val = parseFloat(slider.value) + increment;
+          if (val > parseFloat(slider.max)) {
+            timePlayId = null;
+            document.getElementById('time-play').innerHTML = '&#9654;';
+            return;
+          }
+          slider.value = val;
+          onTimeSliderChange(val);
+        }
+        timePlayId = requestAnimationFrame(step);
+      }
+      timePlayId = requestAnimationFrame(step);
     }
 
     init();

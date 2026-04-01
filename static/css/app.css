@@ -75,6 +75,26 @@
   opacity: 0.75;
 }
 
+/* Time slider */
+#time-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #0EF3C5;
+  cursor: pointer;
+  border: 2px solid #0d1117;
+}
+
+#time-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #0EF3C5;
+  cursor: pointer;
+  border: 2px solid #0d1117;
+}
+
 #panel::-webkit-scrollbar {
   width: 4px;
 }

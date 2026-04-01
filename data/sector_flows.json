@@ -1,0 +1,52 @@
+{
+  "vc_by_sector": {
+    "title": "Where VC Money Is Going (2025)",
+    "total": 350000000000,
+    "flows": [
+      {"name": "AI / Machine Learning", "amount": 95000000000, "change": 145, "color": "#34d399"},
+      {"name": "Fintech", "amount": 52000000000, "change": -15, "color": "#38bdf8"},
+      {"name": "Health Tech / Biotech", "amount": 38000000000, "change": 22, "color": "#fb923c"},
+      {"name": "Climate / Clean Energy", "amount": 32000000000, "change": 65, "color": "#0EF3C5"},
+      {"name": "Cybersecurity", "amount": 22000000000, "change": 30, "color": "#e879f9"},
+      {"name": "SaaS / Enterprise", "amount": 28000000000, "change": -8, "color": "#818cf8"},
+      {"name": "E-commerce / Retail", "amount": 18000000000, "change": -25, "color": "#f43f5e"},
+      {"name": "Crypto / Web3", "amount": 15000000000, "change": 80, "color": "#fbbf24"},
+      {"name": "Space / Defense", "amount": 12000000000, "change": 110, "color": "#94a3b8"},
+      {"name": "Robotics / Automation", "amount": 10000000000, "change": 55, "color": "#04E2B7"},
+      {"name": "EdTech", "amount": 6000000000, "change": -40, "color": "#f97316"},
+      {"name": "Gaming", "amount": 5000000000, "change": -30, "color": "#a855f7"}
+    ]
+  },
+  "vc_by_country": {
+    "title": "VC Funding by Country (2025)",
+    "flows": [
+      {"name": "United States", "code": "USA", "amount": 170000000000, "change": 18, "top_sector": "AI/ML"},
+      {"name": "China", "code": "CHN", "amount": 45000000000, "change": -12, "top_sector": "AI/Semis"},
+      {"name": "India", "code": "IND", "amount": 25000000000, "change": 35, "top_sector": "Fintech"},
+      {"name": "United Kingdom", "code": "GBR", "amount": 18000000000, "change": 8, "top_sector": "Fintech"},
+      {"name": "Israel", "code": "ISR", "amount": 12000000000, "change": -5, "top_sector": "Cyber"},
+      {"name": "France", "code": "FRA", "amount": 12000000000, "change": 25, "top_sector": "AI/ML"},
+      {"name": "Germany", "code": "DEU", "amount": 8000000000, "change": 10, "top_sector": "Climate"},
+      {"name": "Singapore", "code": "SGP", "amount": 10000000000, "change": 40, "top_sector": "Fintech"},
+      {"name": "South Korea", "code": "KOR", "amount": 7000000000, "change": 15, "top_sector": "AI/Gaming"},
+      {"name": "Brazil", "code": "BRA", "amount": 4000000000, "change": -20, "top_sector": "Fintech"},
+      {"name": "Japan", "code": "JPN", "amount": 8000000000, "change": 30, "top_sector": "AI/Robotics"},
+      {"name": "Canada", "code": "CAN", "amount": 6000000000, "change": 12, "top_sector": "AI/ML"}
+    ]
+  },
+  "money_migration": {
+    "title": "Where Money Is Moving (2020→2025)",
+    "shifts": [
+      {"from": "China Real Estate", "to": "Singapore/Dubai RE", "amount": 200000000000, "context": "Capital flight from China property crisis"},
+      {"from": "Traditional Banking", "to": "Fintech / Neobanks", "amount": 150000000000, "context": "Digital banking adoption accelerating"},
+      {"from": "Fossil Fuels", "to": "Clean Energy", "amount": 180000000000, "context": "ESG mandates + IRA subsidies"},
+      {"from": "Public Markets", "to": "Private Equity", "amount": 300000000000, "context": "Institutions chasing returns in private markets"},
+      {"from": "Bonds (low yield)", "to": "Money Markets / T-Bills", "amount": 500000000000, "context": "Rate hikes made short-term debt attractive"},
+      {"from": "European Tech VC", "to": "US AI Startups", "amount": 40000000000, "context": "AI boom concentrated in Silicon Valley"},
+      {"from": "Office Real Estate", "to": "Data Centers", "amount": 80000000000, "context": "Remote work + AI compute demand"},
+      {"from": "Crypto (2022 crash)", "to": "Crypto (2024 recovery)", "amount": 1500000000000, "context": "BTC ETFs + institutional adoption"},
+      {"from": "Japan Savings", "to": "US Treasuries", "amount": 120000000000, "context": "Yield differential driving capital flows"},
+      {"from": "Russian Markets", "to": "UAE/Turkey/India", "amount": 60000000000, "context": "Sanctions redirecting Russian capital"}
+    ]
+  }
+}
