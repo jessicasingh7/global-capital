@@ -1,1 +1,1 @@
-{"updated_at": "2026-07-25 08:02 UTC", "status": "success", "errors": []}
+{"updated_at": "2026-07-26 08:22 UTC", "status": "partial", "errors": ["crypto: 429 Client Error: Too Many Requests for url: https://api.coingecko.com/api/v3/global"]}
